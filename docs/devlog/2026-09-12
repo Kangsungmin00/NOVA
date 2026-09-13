@@ -1,0 +1,361 @@
+# 2026-09-12 Devlog — Simulation Core 초기 설계
+
+## 1. 목표
+
+NOVA-SIM의 첫 구현 목표는 복잡한 Agent나 공간 데이터를 추가하는 것이 아니라, 이후 모든 시뮬레이션 로직이 실행될 수 있는 최소한의 `World` 모델을 만드는 것이었다.
+
+초기 요구사항은 다음과 같이 정의했다.
+
+```text
+1. 하나의 World가 존재한다.
+2. World는 고유 ID를 가진다.
+3. World는 시뮬레이션 시간을 가진다.
+4. World는 현재 실행 단계인 tick을 가진다.
+5. step() 호출을 통해 World 상태가 진행된다.
+6. 외부 모듈은 get_state()를 통해 World 상태를 조회할 수 있다.
+```
+
+장기적으로는 다음과 같은 구조로 확장하는 것을 전제로 한다.
+
+```text
+World
+ ├─ Time
+ ├─ Entity
+ │   ├─ Agent
+ │   ├─ Vehicle
+ │   ├─ Robot
+ │   └─ Building
+ ├─ Event
+ └─ Simulation Rule
+```
+
+현재 단계에서는 이 중 `World`와 `Time`만 구현했다.
+
+---
+
+# 2. World 객체 정의
+
+최초 World 생성 인터페이스는 다음과 같이 구성했다.
+
+```python
+world = World(
+    world_id="NOVA_WORLD_001",
+    start_time=datetime(2026, 1, 1, 0, 0),
+    seed=42,
+)
+```
+
+World가 현재 관리하는 핵심 상태는 다음 네 가지다.
+
+```text
+world_id
+current_time
+tick
+seed
+```
+
+각 변수의 역할은 다음과 같다.
+
+| 상태             | 역할                        |
+| -------------- | ------------------------- |
+| `world_id`     | World 식별자                 |
+| `current_time` | 시뮬레이션 내부 시간               |
+| `tick`         | 시뮬레이션 진행 횟수               |
+| `seed`         | 향후 확률적 시뮬레이션 재현성을 위한 seed |
+
+여기서 `tick`과 `current_time`을 별도의 상태로 관리하기로 했다.
+
+두 값은 비슷해 보이지만 의미가 다르다.
+
+```text
+tick
+→ Simulation Engine이 몇 번 실행되었는가
+
+current_time
+→ Simulation World 내부 시간이 몇 시인가
+```
+
+향후에는 다음과 같은 설정도 가능해야 한다.
+
+```text
+1 tick = 1 second
+1 tick = 10 seconds
+1 tick = 1 minute
+```
+
+현재는 초기 구현을 위해 다음 규칙을 사용한다.
+
+```text
+1 tick = 1 minute
+```
+
+---
+
+# 3. Simulation Step 구현
+
+World를 한 단계 진행시키기 위해 `step()` 메서드를 정의했다.
+
+현재 구현은 다음과 같은 상태 전이를 수행한다.
+
+```text
+step()
+  ↓
+tick += 1
+current_time += 1 minute
+```
+
+코드 수준에서는 다음과 같은 형태다.
+
+```python
+def step(self):
+    self.tick += 1
+    self.current_time += timedelta(minutes=1)
+```
+
+예를 들어 초기 상태가:
+
+```text
+tick         = 0
+current_time = 2026-01-01 00:00:00
+```
+
+라면 한 번의 `step()` 이후:
+
+```text
+tick         = 1
+current_time = 2026-01-01 00:01:00
+```
+
+가 된다.
+
+현재 `timedelta(minutes=1)`은 하드코딩되어 있다.
+
+향후에는 다음과 같이 시간 간격 자체를 World 설정으로 분리하는 것이 필요하다.
+
+```python
+tick_duration=timedelta(minutes=1)
+```
+
+그리고:
+
+```python
+self.current_time += self.tick_duration
+```
+
+형태로 변경할 예정이다.
+
+현재는 아직 해당 추상화까지 적용하지 않았다.
+
+---
+
+# 4. World State 인터페이스
+
+World의 상태를 외부 코드에서 조회할 수 있도록 `get_state()`를 추가했다.
+
+```python
+state = world.get_state()
+```
+
+현재 상태는 dictionary 형태로 반환한다.
+
+```python
+{
+    "world_id": self.world_id,
+    "current_time": self.current_time,
+    "tick": self.tick,
+    "seed": self.seed,
+}
+```
+
+이 인터페이스를 둔 이유는 향후 Observer나 API가 World 내부 속성에 직접 접근하는 것을 최소화하기 위해서다.
+
+다음과 같은 접근은 피하고자 한다.
+
+```python
+world.tick
+world.current_time
+world.seed
+```
+
+대신 외부 모듈에서는 다음 인터페이스를 사용한다.
+
+```python
+state = world.get_state()
+```
+
+의도한 구조는 다음과 같다.
+
+```text
+World Internal State
+        ↓
+    get_state()
+        ↓
+External State Representation
+        ↓
+API / Observer / Storage
+```
+
+이를 통해 World 내부 구현과 외부 표현 계층 간 결합도를 낮추는 것을 목표로 한다.
+
+---
+
+# 5. 초기 실행 검증
+
+초기 테스트에서는 다음과 같이 World 객체를 생성하고 상태 변화를 직접 출력했다.
+
+```python
+world = World(
+    world_id="NOVA_WORLD_001",
+    start_time=datetime(2026, 1, 1, 0, 0),
+    seed=42,
+)
+
+print(world.get_state())
+
+world.step()
+
+print(world.get_state())
+```
+
+검증하고자 한 것은 단순했다.
+
+```text
+World 생성
+↓
+초기 상태 조회
+↓
+step()
+↓
+상태 변화
+```
+
+초기 단계에서는 별도의 테스트 프레임워크를 사용하지 않고 직접 실행 결과를 확인했다.
+
+향후 핵심 시뮬레이션 로직이 늘어나면 `pytest` 기반 단위 테스트로 전환할 필요가 있다.
+
+---
+
+# 6. 현재 설계의 한계
+
+현재 World는 사실상 Clock 역할만 수행한다.
+
+아직 다음 기능은 존재하지 않는다.
+
+```text
+Entity Registry
+Entity Behavior
+Event System
+Spatial State
+Movement
+State Persistence
+Simulation Scheduler
+```
+
+또한 `step()` 내부에서 모든 상태 전이를 직접 관리하는 방식은 규모가 커질수록 유지하기 어렵다.
+
+향후에는 다음과 같은 구조를 검토할 필요가 있다.
+
+```text
+World.step()
+   │
+   ├─ Clock update
+   ├─ Entity update
+   ├─ Event processing
+   └─ State generation
+```
+
+현재는 이 구조를 만들기 위한 최소 실행 단위를 구현한 상태다.
+
+---
+
+# 7. 현재 아키텍처
+
+2026-09-12 기준 NOVA-SIM의 구조는 다음 수준이다.
+
+```text
+NOVA-SIM
+
+World
+├─ world_id
+├─ current_time
+├─ tick
+├─ seed
+│
+├─ step()
+└─ get_state()
+```
+
+데이터 흐름은 다음과 같다.
+
+```text
+World
+  ↓
+step()
+  ↓
+Internal State Change
+  ↓
+get_state()
+  ↓
+External State
+```
+
+---
+
+# 8. 다음 단계
+
+현재 상태를 터미널 출력으로만 확인하는 방식은 Entity가 추가되면 빠르게 한계가 생긴다.
+
+다음 단계에서는 World 상태를 외부에서 관측할 수 있도록 다음 구조를 구현할 예정이다.
+
+```text
+World
+↓
+get_state()
+↓
+API / Observer
+↓
+Browser
+```
+
+특히 장기적으로는:
+
+```text
+Simulation Code
+↓
+State Change
+↓
+Visualization
+```
+
+을 빠르게 반복할 수 있는 개발환경을 만드는 것을 우선 목표로 한다.
+
+## 2026-09-12 완료 범위
+
+```text
+[완료]
+
+- World 클래스 초기 구현
+- world_id
+- current_time
+- tick
+- seed
+- step()
+- get_state()
+- tick과 simulation time 분리
+- 1 tick = 1 minute 규칙 적용
+```
+
+```text
+[미구현]
+
+- SpatialEntity
+- Entity Registry
+- API
+- Observer
+- Map
+- Event System
+- Agent Behavior
+- Simulation Persistence
+```
+
+오늘 작업은 NOVA-SIM의 기능을 많이 만드는 것보다, 이후 시스템이 실행될 수 있는 **Simulation Core의 최소 상태 모델과 상태 전이 인터페이스를 정의하는 작업**에 집중했다.

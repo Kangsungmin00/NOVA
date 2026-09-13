@@ -1,0 +1,17 @@
+[project]
+name = "nova-sim"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi[standard]>=0.141.1",
+    "nicegui>=3.16.0",
+]
+
+[project.scripts]
+nova-sim = "nova_sim:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
