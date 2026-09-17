@@ -1,23 +1,22 @@
-from datetime import datetime
-from fastapi import FastAPI
-from nova_sim.world import World
+from fastapi import FastAPI, HTTPException
+from nova_sim.scenario import create_demo_world
 
 app = FastAPI(
     title = "NOVA-SIM API",
     version = "0.1.0",
 )
 
-world = World(
-    world_id = "NOVA_WORLD_001",
-    start_time=datetime(2026,1,1,0,0),
-    seed = 42,
-)
+world = create_demo_world()
 
 @app.get("/app/world")
 def get_world():
     return world.get_state()
 
 @app.post("/app/world/step")
-def step_world():
-    world.step()
+def step_world(entity_id: str | None = None, direction: str | None = None):
+    try:
+        world.step(entity_id, direction)
+    except (KeyError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
     return world.get_state()

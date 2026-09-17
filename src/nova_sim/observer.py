@@ -1,182 +1,74 @@
 from nicegui import ui
 
-from nova_sim.renderer import render_entity
+from nova_sim.renderer import render_grid
 from nova_sim.scenario import create_demo_world
 
 
 world = create_demo_world()
+SELECTED_ENTITY_ID = "agent_001"
 
 
-@ui.page('/')
-async def main():
-
-    event_logs = []
-
-    # Observer 최초 실행 시점의 World 상태
+@ui.page("/")
+def main() -> None:
     initial_state = world.get_state()
 
-    # --------------------------------
-    # 화면 갱신
-    # --------------------------------
-
-    def refresh(state):
-        current_time = state.get("current_time")
-
-        if current_time:
-            time_text = current_time.strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-        else:
-            time_text = "-"
-
-        world_id_label.set_text(
-            f'World ID: {state.get("world_id", "-")}'
-        )
-
+    def refresh(state: dict) -> None:
+        current_time = state["current_time"]
+        tick_label.set_text(f'Tick: {state["tick"]}')
         time_label.set_text(
-            f'Time: {time_text}'
+            f'Simulation Time: {current_time.strftime("%Y-%m-%d %H:%M:%S")}'
         )
 
-        tick_label.set_text(
-            f'Tick: {state.get("tick", "-")}'
+        selected_entity = next(
+            entity
+            for entity in state["entities"]
+            if entity["entity_id"] == SELECTED_ENTITY_ID
+        )
+        entity_id_label.set_text(f'ID: {selected_entity["entity_id"]}')
+        entity_type_label.set_text(f'Type: {selected_entity["entity_type"]}')
+        position_label.set_text(
+            f'Position: ({selected_entity["x"]}, {selected_entity["y"]})'
+        )
+        render_grid(
+            grid_container,
+            state["entities"],
+            width=state["grid_width"],
+            height=state["grid_height"],
         )
 
-        seed_label.set_text(
-            f'Seed: {state.get("seed", "-")}'
-        )
+    def move(direction: str) -> None:
+        try:
+            world.step(SELECTED_ENTITY_ID, direction)
+        except ValueError as error:
+            ui.notify(str(error), type="warning")
+            return
 
-        inspector_tick.set_text(
-            f'Tick: {state.get("tick", "-")}'
-        )
+        refresh(world.get_state())
 
-    # --------------------------------
-    # STEP
-    # --------------------------------
+    ui.label("NOVA-SIM").classes("text-2xl font-bold")
 
-    def step():
-        world.step()
-
-        state = world.get_state()
-
-        event_logs.append(
-            f'Tick {state["tick"]} completed'
-        )
-
-        event_log.set_text(
-            "\n".join(event_logs[-10:])
-        )
-
-        refresh(state)
-
-    # --------------------------------
-    # TITLE
-    # --------------------------------
-
-    ui.label(
-        'NOVA-SIM Observer'
-    ).classes(
-        'text-2xl font-bold'
-    )
-
-    # --------------------------------
-    # SIMULATION CONTROL
-    # --------------------------------
-
-    with ui.card().classes("w-full"):
-
-        world_id_label = ui.label()
-        time_label = ui.label()
+    with ui.row().classes("gap-8"):
         tick_label = ui.label()
-        seed_label = ui.label()
+        time_label = ui.label()
 
-        ui.button(
-            "STEP",
-            on_click=step,
-        )
+    with ui.card():
+        ui.label("SIMULATION GRID").classes("text-lg font-bold")
+        grid_container = ui.column().classes("gap-0")
 
-    # --------------------------------
-    # WORLD VIEW + INSPECTOR
-    # --------------------------------
+    with ui.card().classes("w-72"):
+        ui.label("Agent").classes("text-lg font-bold")
+        entity_id_label = ui.label()
+        entity_type_label = ui.label()
+        position_label = ui.label()
 
-    with ui.row().classes(
-        "w-full items-stretch"
-    ):
-
-        # WORLD VIEW
-        with ui.card().classes("flex-grow"):
-
-            ui.label(
-                "WORLD VIEW"
-            ).classes(
-                "text-lg font-bold"
-            )
-
-            world_center = initial_state["world_center"]
-
-            world_map = ui.leaflet(
-                center=(
-                    world_center["latitude"],
-                    world_center["longitude"],
-                ),
-                zoom=13,
-            ).classes(
-                "w-full h-[500px]"
-            )
-
-        # INSPECTOR
-        with ui.card().classes("w-64"):
-
-            ui.label(
-                "INSPECTOR"
-            ).classes(
-                "text-lg font-bold"
-            )
-
-            ui.label("World")
-
-            inspector_tick = ui.label()
-
-    # --------------------------------
-    # EVENT LOG
-    # --------------------------------
-
-    with ui.card().classes("w-full"):
-
-        ui.label(
-            "EVENT LOG"
-        ).classes(
-            "text-lg font-bold"
-        )
-
-        event_log = ui.label(
-            "No events yet"
-        ).classes(
-            "whitespace-pre-line"
-        )
-
-    # --------------------------------
-    # Leaflet 초기화 대기
-    # --------------------------------
-
-    await world_map.initialized()
-
-    # --------------------------------
-    # 최초 Entity 렌더링
-    # --------------------------------
-
-    for entity in initial_state["entities"]:
-        render_entity(
-            world_map,
-            entity,
-        )
-
-    # --------------------------------
-    # 최초 상태 표시
-    # --------------------------------
+    with ui.column().classes("items-center"):
+        ui.button("↑", on_click=lambda: move("N"))
+        with ui.row():
+            ui.button("←", on_click=lambda: move("W"))
+            ui.button("↓", on_click=lambda: move("S"))
+            ui.button("→", on_click=lambda: move("E"))
 
     refresh(initial_state)
 
 
-ui.run(
-    title='NOVA-SIM Observer'
-)
+ui.run(title="NOVA-SIM Observer")

@@ -67,7 +67,7 @@ Entity State
     ↓
 Renderer
     ↓
-Leaflet
+2D Grid
     ↓
 World View
 ```
@@ -89,7 +89,7 @@ World ID
 Simulation Time
 Tick
 Random Seed
-World Center
+Grid Size
 Entities
 ```
 
@@ -127,8 +127,8 @@ World 내부에 존재하는 공간 객체의 최소 모델인 `SpatialEntity`�
 ```text
 entity_id
 entity_type
-latitude
-longitude
+x
+y
 ```
 
 Entity는 World에 등록되어 World State의 일부로 관리됩니다.
@@ -153,7 +153,7 @@ Simulation의 초기 조건을 UI 및 Simulation Core와 분리하기 위해 Sce
 World ID
 Start Time
 Random Seed
-World Center
+Grid Size
 Initial Entities
 ```
 
@@ -165,36 +165,34 @@ Observer에서는 World를 직접 구성하지 않고 Scenario를 통해 생성�
 
 Simulation 상태를 직접 관측할 수 있도록 **NiceGUI 기반 NOVA Observer**를 구현했습니다.
 
-현재 Observer는 다음 네 영역으로 구성됩니다.
+현재 Observer는 다음 영역으로 구성됩니다.
 
 ```text
 ┌─────────────────────────────────────┐
-│ SIMULATION CONTROL                  │
-├──────────────────────┬──────────────┤
-│                      │              │
-│ WORLD VIEW           │ INSPECTOR    │
-│                      │              │
-├──────────────────────┴──────────────┤
-│ EVENT LOG                           │
+│ Tick / Simulation Time               │
+├─────────────────────────────────────┤
+│ 5 × 5 Simulation Grid                │
+├─────────────────────────────────────┤
+│ Agent ID / Type / Position           │
+├─────────────────────────────────────┤
+│ Direction Controls                   │
 └─────────────────────────────────────┘
 ```
 
 현재 Observer에서 확인할 수 있는 주요 상태는 다음과 같습니다.
 
 ```text
-World ID
 Simulation Time
 Tick
-Random Seed
-Spatial Entity
+Agent Position
 ```
 
-`STEP`을 실행하면 World 상태가 변경되고 Observer에 반영됩니다.
+방향 버튼을 누르면 Agent 위치와 World 상태가 변경되고 Observer에 반영됩니다.
 
 ```text
-STEP
+Direction button
   ↓
-World.step()
+World.step(entity_id, direction)
   ↓
 World.get_state()
   ↓
@@ -205,23 +203,8 @@ Observer Update
 
 ### Spatial Visualization
 
-Observer의 World View에 Leaflet 기반 지도를 연결했습니다.
-
-지도 중심 위치는 Observer에 직접 정의하지 않고 World State의 `world_center`를 사용합니다.
-
-```text
-Scenario
-   ↓
-World Center
-   ↓
-World State
-   ↓
-Observer
-   ↓
-Leaflet
-```
-
-따라서 Scenario에 따라 다른 공간을 사용하더라도 Observer의 지도 코드 자체를 변경하지 않는 구조를 유지합니다.
+Observer의 World View는 `x`, `y` 기반 5 × 5 격자를 사용합니다. `renderer.py`는
+World State를 받아 각 Entity를 격자 셀에 표시하므로 Simulation Logic은 UI 구현에 의존하지 않습니다.
 
 ---
 
@@ -229,18 +212,18 @@ Leaflet
 
 Entity의 상태와 화면 표현을 분리하기 위해 Renderer 계층을 구현했습니다.
 
-현재 Entity Type에 따라 다른 지도 표현을 적용할 수 있습니다.
+현재 Entity Type에 따라 다른 격자 기호를 적용할 수 있습니다.
 
 ```text
-agent      → 📍
-vehicle    → 🚚
-robot      → 🤖
-warehouse  → 🏭
+agent      → A
+vehicle    → V
+robot      → R
+warehouse  → W
 ```
 
 Observer는 특정 Entity의 표현 방식을 직접 결정하지 않고 Renderer에 전달합니다.
 
-이를 기반으로 향후 Point뿐 아니라 Line, Polygon, Route, Grid 등 다양한 공간 표현으로 확장할 수 있습니다.
+향후 실제 지리 공간이 필요해지면 좌표 변환 계층과 지도 Renderer를 별도로 추가할 수 있습니다.
 
 ---
 
@@ -251,8 +234,8 @@ World 상태를 외부 시스템에서 조회할 수 있도록 FastAPI 기반 �
 현재 제공되는 Endpoint는 다음과 같습니다.
 
 ```text
-GET  /api/world
-POST /api/world/step
+GET  /app/world
+POST /app/world/step
 ```
 
 이를 통해 다음 데이터 흐름을 검증했습니다.
@@ -319,7 +302,6 @@ NOVA/
 Python
 uv
 NiceGUI
-Leaflet
 FastAPI
 Git / GitHub
 ```
